@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location Tracker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #locationInfo {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9ff;
+            border-radius: 15px;
+            display: none;
+        }
+
+        .coord {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            font-family: 'Courier New', monospace;
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        #map {
+            height: 300px;
+            width: 100%;
+            border-radius: 15px;
+            margin-top: 20px;
+            background: #ddd;
+            display: none;
+        }
+
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .accuracy {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📍 Location Tracker</h1>
+        <p class="subtitle">Get your current location with one click</p>
+        
+        <button id="getLocation" class="btn">Get My Location</button>
+        <button id="stopTracking" class="btn" style="display: none;">Stop Tracking</button>
+        
+        <div id="status"></div>
+        
+        <div id="locationInfo">
+            <div class="coord">
+                <div>Latitude: <span id="lat">-</span></div>
+                <div class="accuracy">Accuracy: <span id="latAccuracy">-</span></div>
+            </div>
+            <div class="coord">
+                <div>Longitude: <span id="lon">-</span></div>
+                <div class="accuracy">Accuracy: <span id="lonAccuracy">-</span></div>
+            </div>
+            <div class="coord">
+                <div>Altitude: <span id="alt">-</span>m</div>
+                <div class="accuracy">Accuracy: <span id="altAccuracy">-</span></div>
+            </div>
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <script>
+        let watchId = null;
+        const getLocationBtn = document.getElementById('getLocation');
+        const stopTrackingBtn = document.getElementById('stopTracking');
+        const statusDiv = document.getElementById('status');
+        const locationInfo = document.getElementById('locationInfo');
+
+        // Show status message
+        function showStatus(message, type = 'success') {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+        }
+
+        // Update location display
+        function updateLocation(position) {
+            document.getElementById('lat').textContent = position.coords.latitude.toFixed(6);
+            document.getElementById('lon').textContent = position.coords.longitude.toFixed(6);
+            document.getElementById('latAccuracy').textContent = `${position.coords.accuracy.toFixed(0)}m`;
+            document.getElementById('lonAccuracy').textContent = `${position.coords.accuracy.toFixed(0)}m`;
+            
+            if (position.coords.altitude) {
+                document.getElementById('alt').textContent = position.coords.altitude.toFixed(0);
+                document.getElementById('altAccuracy').textContent = `${position.coords.altitudeAccuracy.toFixed(0)}m`;
+            } else {
+                document.getElementById('alt').textContent = 'N/A';
+                document.getElementById('altAccuracy').textContent = '-';
+            }
+
+            locationInfo.style.display = 'block';
+            showMap(position.coords.latitude, position.coords.longitude);
+        }
+
+        // Show map using Leaflet (CDN loaded)
+        function showMap(lat, lon) {
+            const mapDiv = document.getElementById('map');
+            mapDiv.style.display = 'block';
+            
+            // Load Leaflet if not already loaded
+            if (!window.L) {
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+                document.head.appendChild(link);
+
+                const script = document.createElement('script');
+                script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+                script.onload = () => initMap(lat, lon);
+                document.head.appendChild(script);
+            } else {
+                initMap(lat, lon);
+            }
+        }
+
+        function initMap(lat, lon) {
+            const mapDiv = document.getElementById('map');
+            mapDiv.innerHTML = '';
+            
+            const map = L.map(mapDiv).setView([lat, lon], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            L.marker([lat, lon]).addTo(map)
+                .bindPopup('Your Location')
+                .openPopup();
+        }
+
+        // Get single location
+        function getCurrentLocation() {
+            if (!navigator.geolocation) {
+                showStatus('Geolocation is not supported by this browser.', 'error');
+                return;
+            }
+
+            showStatus('Getting your location...');
+            getLocationBtn.disabled = true;
+            stopTrackingBtn.style.display = 'none';
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    updateLocation(position);
+                    showStatus('Location retrieved successfully!');
+                    getLocationBtn.disabled = false;
+                },
+                (error) => {
+                    let message = 'Error getting location: ';
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            message += 'User denied the request';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            message += 'Location information unavailable';
+                            break;
+                        case error.TIMEOUT:
+                            message += 'Request timed out';
+                            break;
+                    }
+                    showStatus(message, 'error');
+                    getLocationBtn.disabled = false;
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 60000
+                }
+            );
+        }
+
+        // Start continuous tracking
+        function startTracking() {
+            if (!navigator.geolocation) {
+                showStatus('Geolocation is not supported by this browser.', 'error');
+                return;
+            }
+
+            showStatus('Tracking location...');
+            getLocationBtn.style.display = 'none';
+            stopTrackingBtn.style.display = 'inline-block';
+
+            watchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    updateLocation(position);
+                    showStatus(`Location updated: ${new Date().toLocaleTimeString()}`);
+                },
+                (error) => {
+                    showStatus('Error tracking location: ' + error.message, 'error');
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 5000,
+                    maximumAge: 30000
+                }
+            );
+        }
+
+        // Stop tracking
+        function stopTracking() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            getLocationBtn.style.display = 'inline-block';
+            stopTrackingBtn.style.display = 'none';
+            showStatus('Tracking stopped.');
+        }
+
+        // Event listeners
+        getLocationBtn.addEventListener('click', getCurrentLocation);
+        stopTrackingBtn.addEventListener('click', stopTracking);
+
+        // Handle page visibility change
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && watchId !== null) {
+                stopTracking();
+            }
+        });
+    </script>
+</body>
+  </html>
